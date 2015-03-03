@@ -77,7 +77,24 @@ function(req, res) {
 /************************************************************/
 // Write your authentication routes here
 /************************************************************/
+app.post('/signup', function(req, res){
+  new User({ username: req.body.username}).fetch().then(function(found) {
+      if (found) {
+        console.log('user found')
+        res.send(201, found.attributes);
+      } else {
+        var user = new User({
+          username: req.body.username,
+          password: req.body.password,
+        });
 
+        user.save().then(function(newUser) {
+          Users.add(newUser);
+          res.send(201, newUser);
+        });
+      }
+    });
+});
 
 
 /************************************************************/
