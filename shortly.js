@@ -2,7 +2,7 @@ var express = require('express');
 var util = require('./lib/utility');
 var partials = require('express-partials');
 var bodyParser = require('body-parser');
-
+var session = require('express-session')
 
 var db = require('./app/config');
 var Users = require('./app/collections/users');
@@ -21,27 +21,41 @@ app.use(bodyParser.json());
 // Parse forms (signup/login)
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(__dirname + '/public'));
+// app.use(express.cookieParser('S3CRE7'));
+app.use(session({
+  secret: 'keyboard cat',
+  resave: false,
+  saveUninitialized: true
+}))
 
-
-app.get('/', 
-function(req, res) {
-  res.render('index');
+app.get('/', function(req, res) {
+  if(util.checkUser(req)){
+    res.render('index');
+    res.end();
+  }
+  else
+    res.redirect('/login');
 });
 
-app.get('/create', 
-function(req, res) {
-  res.render('index');
+app.get('/create', function(req, res) {
+  if(util.checkUser(req)){
+    res.render('index');
+  }
+  else
+    res.redirect('/login');
 });
 
-app.get('/links', 
-function(req, res) {
-  Links.reset().fetch().then(function(links) {
-    res.send(200, links.models);
-  });
+app.get('/links', function(req, res) {
+  if(util.checkUser(req)){
+    Links.reset().fetch().then(function(links) {
+      res.send(200, links.models);
+    });
+  }
+  else
+    res.redirect('/login');
 });
 
-app.post('/links', 
-function(req, res) {
+app.post('/links', function(req, res) {
   var uri = req.body.url;
 
   if (!util.isValidUrl(uri)) {
@@ -77,11 +91,49 @@ function(req, res) {
 /************************************************************/
 // Write your authentication routes here
 /************************************************************/
+
+app.get('/login', function(req, res){
+  if(util.checkUser(req)){
+    res.redirect('/');
+  }
+  else
+    res.render('login');
+});
+
+app.get('/signup', function(req, res){
+  if(util.checkUser(req)){
+    res.redirect('/');
+  }
+  else
+    res.render('signup');
+});
+
+app.post('/login', function(req, res){
+  // If the username and password match, create a session ID and redirect user to index
+  new User({ username: req.body.username}).fetch().then(function(found) {
+      if (found) {
+        util.bCryptCompare(req.body.password, found.attributes.password).then(function(match) {
+          if(match){
+            console.log('Login for user ' + req.body.username + ' successful');
+            req.session.user = found;
+            res.redirect('/');
+          }
+          else
+            console.log('Login for user ' + req.body.username + ' failed');
+            res.end("Bad username or password")
+        });
+      } else {
+        console.log('User: ' + req.body.username + ' not found!');
+        res.redirect('/login');
+      }
+    });
+});
+
 app.post('/signup', function(req, res){
   new User({ username: req.body.username}).fetch().then(function(found) {
       if (found) {
-        console.log('user found')
-        res.send(201, found.attributes);
+        res.writeHead(404);
+        res.end("User Exists");
       } else {
         var user = new User({
           username: req.body.username,
@@ -90,12 +142,19 @@ app.post('/signup', function(req, res){
 
         user.save().then(function(newUser) {
           Users.add(newUser);
-          res.send(201, newUser);
+          // Add sessionid to user
+          req.session.user = newUser;
+          res.redirect('/');
         });
       }
     });
 });
 
+app.get('/logout', function(req, res){
+  console.log('Logging out')
+  req.session.user = null;
+  res.redirect('/');
+});
 
 /************************************************************/
 // Handle the wildcard route last - if all other routes fail
